@@ -73,7 +73,7 @@ class Sms extends \yii\base\Component
             CURLOPT_FOLLOWLOCATION => true,
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => $type,
-            CURLOPT_POSTFIELDS => $data,
+            CURLOPT_POSTFIELDS => http_build_query($data),
             CURLOPT_HTTPHEADER => ["Authorization: Bearer " . SmsSetting::getToken()],
         ]);
         $response = curl_exec($curl);
@@ -153,6 +153,26 @@ class Sms extends \yii\base\Component
         }
         $errors[] = $sms->errors;
         Yii::error([$errors]);
+        return false;
+    }
+
+    /**
+     * @return bool
+     * @throws ConflictHttpException
+     */
+    public function sendBatch(array $messages): bool
+    {
+        $response = $this->request("message/sms/send-batch", [
+            'messages' => $messages,
+            'from' => '4546',
+            'dispatch_id' => 123
+        ]);
+        if (isset($response['status']) && $response['status'] === 'success') {
+            return true;
+        }
+        Yii::error($response);
+        var_dump($response);
+        exit();
         return false;
     }
 
