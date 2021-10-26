@@ -61,11 +61,11 @@ php yii smsgo/down all
 
 ## Ishlatish
 ```php
-Yii::$app->sms->sendMessage(string $phone, string $message, int $user_id = null, string $from = self::MAIN_NUMBER)
+Yii::$app->sms->send(string $phone, string $message, int $user_id = null, string $from = self::MAIN_NUMBER)
 ```
 yoki
 ```php
-(new \backend\modules\smsgo\models\Sms())->sendMessage(string $phone, string $message, int $user_id = null, string $from = self::MAIN_NUMBER)
+(new \backend\modules\smsgo\models\Sms())->send(string $phone, string $message, int $user_id = null, string $from = self::MAIN_NUMBER)
 ```
 
 >  Created by: Olimjon Gofurov! :wink:
