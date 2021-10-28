@@ -8,6 +8,7 @@ namespace backend\modules\smsgo;
 class Smsgo extends \yii\base\Module
 {
     /**
+     * Salom
      * {@inheritdoc}
      */
     public $controllerNamespace = 'backend\modules\smsgo\controllers';
