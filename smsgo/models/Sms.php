@@ -8,18 +8,31 @@
 
 namespace backend\modules\smsgo\models;
 
-use http\Exception\InvalidArgumentException;
+use common\models\User;
 use Yii;
+use yii\base\InvalidArgumentException;
 use yii\helpers\Json;
 use yii\helpers\Url;
 use yii\web\ConflictHttpException;
 use yii\web\HttpException;
 use yii\web\UnauthorizedHttpException;
 
+/**
+ *
+ * @property-read array $userInfo
+ * @property-read string $newToken
+ * @property-read null|mixed $info
+ * @property-write int $status
+ */
 class Sms extends \yii\base\Component
 {
-    public const MAIN_NUMBER = '4546';
-    public const CALL_BACK_URL = "https://test.uz";
+    public $main_number = '4545';
+
+    public function init()
+    {
+        $this->main_number = Yii::$app->params['smsNumber'] ?? $this->main_number;
+        parent::init();
+    }
 
     /**
      * Base Url for cURL
@@ -35,14 +48,14 @@ class Sms extends \yii\base\Component
      */
     public function updateToken(): bool
     {
-        $response = $this->request("auth/refresh", [], 'PATCH');
+        $response = $this->request("auth/refresh", [], 'PATCH', true, false);
+
         if ($response['message'] === "token_refreshed") {
             if (SmsSetting::updateToken($response['data']['token'])) {
                 return true;
             }
             return false;
         }
-
         if (SmsSetting::updateToken($this->getNewToken())) {
             return true;
         }
@@ -57,10 +70,13 @@ class Sms extends \yii\base\Component
      * @param string $url
      * @param array $data
      * @param string $type
+     * @param bool $bearerAuth
+     * @param bool $checkTokenExpired
      * @return array
      * @throws ConflictHttpException
+     * @throws HttpException
      */
-    private function request(string $url, array $data = [], string $type = 'POST'): array
+    private function request(string $url, array $data = [], string $type = 'POST', bool $bearerAuth = true, bool $checkTokenExpired = true): array
     {
         $curl = curl_init();
 
@@ -74,12 +90,18 @@ class Sms extends \yii\base\Component
             CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
             CURLOPT_CUSTOMREQUEST => $type,
             CURLOPT_POSTFIELDS => http_build_query($data),
-            CURLOPT_HTTPHEADER => ["Authorization: Bearer " . SmsSetting::getToken()],
+            CURLOPT_HTTPHEADER => $bearerAuth ? ["Authorization: Bearer " . SmsSetting::getToken()] : [],
         ]);
         $response = curl_exec($curl);
         curl_close($curl);
 
-        return Json::decode($response);
+        $result = Json::decode($response);
+
+        if ($checkTokenExpired && $result['message'] === 'Token has expired' && $this->updateToken()) {
+            Yii::$app->session->setFlash('info', 'Token yangilandi');
+            return $this->request($url, $data, $type, $bearerAuth, false);
+        }
+        return $result;
     }
 
     /**
@@ -88,7 +110,8 @@ class Sms extends \yii\base\Component
      */
     public function getNewToken(): string
     {
-        $response = $this->request("auth/login", ['email' => SmsSetting::getEmail(), 'password' => SmsSetting::getPassword()]);
+        $response = $this->request("auth/login", ['email' => SmsSetting::getEmail(), 'password' => SmsSetting::getPassword()], 'POST', false);
+
         if ($response['message'] === "token_generated") {
             return $response['data']['token'];
         }
@@ -101,6 +124,7 @@ class Sms extends \yii\base\Component
     /**
      * @return mixed|null
      * @throws ConflictHttpException
+     * @throws HttpException
      */
     public function getInfo()
     {
@@ -119,13 +143,18 @@ class Sms extends \yii\base\Component
      * @param string $from
      * @return bool
      * @throws ConflictHttpException
+     * @throws HttpException
      */
-    public function send(string $phone, string $message, int $user_id = null, string $from = self::MAIN_NUMBER): bool
+    public function send(string $phone, string $message, int $user_id = null): bool
     {
+        $from = $this->main_number;
+        
         $phone = $this->phoneNormalize($phone);
 
+        $user = User::findOne(['phone' => $this->denormalize($phone)]);
+
         $sms = new SmsHistory([
-            'user_id' => $user_id,
+            'user_id' => $user_id ?? $user->id ?? null,
             'phone' => $phone,
             'message' => $message,
             'from' => $from,
@@ -140,7 +169,7 @@ class Sms extends \yii\base\Component
                 'message' => $message,
                 'from' => $from,
                 'callback_url' => Url::to(['default/call-back'], true)
-            ], 'POST');
+            ]);
 
             if (!isset($response['status_code'])) {
                 $sms->message_id = (int)$response['id'];
@@ -157,22 +186,22 @@ class Sms extends \yii\base\Component
     }
 
     /**
+     * @param array $messages
      * @return bool
      * @throws ConflictHttpException
+     * @throws HttpException
      */
     public function sendBatch(array $messages): bool
     {
         $response = $this->request("message/sms/send-batch", [
             'messages' => $messages,
-            'from' => '4546',
+            'from' => $this->main_number,
             'dispatch_id' => 123
         ]);
         if (isset($response['status']) && $response['status'] === 'success') {
             return true;
         }
         Yii::error($response);
-        var_dump($response);
-        exit();
         return false;
     }
 
@@ -190,9 +219,26 @@ class Sms extends \yii\base\Component
     }
 
     /**
+     * Denormalize phone number
+     * input: 998991234567
+     * output: +998 99 123 45 67
+     * @param string $phone
+     * @return string
+     */
+    private function denormalize(string $phone): string
+    {
+        if (strlen($phone) === 12) {
+            $p = $phone;
+            return "+{$p[0]}{$p[1]}{$p[2]} {$p[3]}{$p[4]} {$p[5]}{$p[6]}{$p[7]} {$p[8]}{$p[9]} {$p[10]}{$p[11]}";
+        }
+        throw new InvalidArgumentException("Telefon raqami notog'ri {$phone}");
+    }
+
+    /**
      * @param int $sms_history_id
      * @return bool
      * @throws ConflictHttpException
+     * @throws HttpException
      */
     public function setStatus(int $sms_history_id): bool
     {
@@ -214,9 +260,21 @@ class Sms extends \yii\base\Component
     /**
      * @return array
      * @throws ConflictHttpException
+     * @throws HttpException
      */
     public function getUserInfo(): array
     {
         return $this->request("auth/user", [], 'GET');
+    }
+
+    /**
+     * @param int $message_id
+     * @return array
+     * @throws ConflictHttpException
+     * @throws HttpException
+     */
+    public function getStatus(int $message_id): array
+    {
+        return $this->request("message/sms/status/{$message_id}", [], 'GET');
     }
 }

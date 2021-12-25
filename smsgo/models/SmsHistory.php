@@ -127,6 +127,38 @@ class SmsHistory extends \yii\db\ActiveRecord
     }
 
     /**
+     * @param string $status
+     */
+    public function setStatus(string $status): void
+    {
+        switch ($status) {
+            case 'Waiting':
+                $this->status = self::STATUS_WAITING;
+                break;
+            case 'TRANSMTD' :
+                $this->status = self::STATUS_TRANSMTD;
+                break;
+            case 'DELIVRD' :
+                $this->status = self::STATUS_DELIVERED;
+                break;
+            case 'UNDELIV' :
+                $this->status = self::STATUS_UNDELIV;
+                break;
+            case 'EXPIRED' :
+                $this->status = self::STATUS_EXPIRED;
+                break;
+            case 'REJECTD' :
+                $this->status = self::STATUS_REJECTD;
+                break;
+            case 'DELETED' :
+                $this->status = self::STATUS_DELETED;
+                break;
+            default:
+                $this->status = self::STATUS_OTHER;
+        }
+    }
+
+    /**
      * Gets query for [[CreatedBy]].
      *
      * @return \yii\db\ActiveQuery
